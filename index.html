@@ -15,6 +15,7 @@ html, body {
 #stage {
   width: 100vw;
   height: 100vh;
+  height: var(--win-h, 100vh);
   display: flex; align-items: center; justify-content: center;
   background: #000;
 }
@@ -271,7 +272,7 @@ function drawFrame() {
   rafId = requestAnimationFrame(drawFrame);
 }
 
-async function handleTap() {
+function handleTap() {
   if (!started) {
     started = true;
     playing = true;
@@ -282,10 +283,7 @@ async function handleTap() {
     // 1. create AudioContext synchronously in gesture
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-    // 2. resume immediately — must be in gesture on iOS
-    await audioCtx.resume();
-
-    // 3. build gain graph
+    // 2. build gain graph
     motorGain = audioCtx.createGain();
     musicGain = audioCtx.createGain();
     motorGain.gain.value = 1;
@@ -293,17 +291,18 @@ async function handleTap() {
     motorGain.connect(audioCtx.destination);
     musicGain.connect(audioCtx.destination);
 
-    // 4. route audio elements through gain nodes
+    // 3. route audio elements through gain nodes
     const motorSrc = audioCtx.createMediaElementSource(audMotor);
     const musicSrc = audioCtx.createMediaElementSource(audMusic);
     motorSrc.connect(motorGain);
     musicSrc.connect(musicGain);
 
-    // 5. set element volumes to full (gain nodes handle crossfade)
+    // 4. set element volumes to full (gain nodes handle crossfade)
     audMotor.volume = 1;
     audMusic.volume = 1;
 
-    // 6. play everything
+    // 5. resume context and play — all synchronous in gesture
+    audioCtx.resume();
     vidEvo.play().catch(e => {});
     vidJoshua.play().catch(e => {});
     audMotor.play().catch(e => {});
