@@ -30,6 +30,9 @@ html, body {
 }
 @media (max-width: 600px) {
   :root {
+    --vh: calc(64vw * 16 / 9);
+    --vw: 64vw;
+    --gap: 4vw;
     --thumb: 20px;
     --label-pad-y: 14px;
     --label-pad-x: 12px;
@@ -109,8 +112,11 @@ html, body {
 #x-slider {
   width: 100%; -webkit-appearance: none; appearance: none;
   height: 1px; background: #2a2a2a; outline: none;
-  cursor: ew-resize; display: block; margin: 0 0 5px 0; padding: 0;
+  cursor: ew-resize; display: block; margin: 0 0 0 0; padding: 0;
   touch-action: none;
+}
+#x-labels {
+  margin-top: calc(var(--label-pad-x) + 2px);
 }
 #x-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -121,7 +127,7 @@ html, body {
   width: var(--thumb); height: var(--thumb); border-radius: 50%;
   background: #fff; border: none;
 }
-#x-labels { display: flex; justify-content: space-between; padding: 0 var(--label-pad-x); }
+#x-labels { display: flex; justify-content: space-between; }
 .x-end { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .x-end.right { align-items: flex-end; }
 .lbl {
@@ -179,6 +185,9 @@ html, body {
     </div>
   </div>
 </div>
+
+<audio id="aud-motor" src="https://tiqrobothuman.b-cdn.net/motor.m4a" loop preload="auto"></audio>
+<audio id="aud-music" src="https://tiqrobothuman.b-cdn.net/music.m4a" loop preload="auto"></audio>
 
 <video id="vid-evo" src="https://tiqrobothuman.b-cdn.net/evo.mp4"
   muted playsinline preload="auto" style="display:none"></video>
@@ -262,9 +271,11 @@ function drawFrame() {
 }
 
 function setupAudio() {
+  motorNode = document.getElementById('aud-motor');
+  musicNode = document.getElementById('aud-music');
+
   // create AudioContext synchronously in gesture
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
   motorGain = audioCtx.createGain();
   musicGain = audioCtx.createGain();
   motorGain.gain.value = 1;
@@ -272,16 +283,17 @@ function setupAudio() {
   motorGain.connect(audioCtx.destination);
   musicGain.connect(audioCtx.destination);
 
-  // connect audio elements through Web Audio graph
-  motorNode = new Audio('https://tiqrobothuman.b-cdn.net/motor.m4a');
-  musicNode = new Audio('https://tiqrobothuman.b-cdn.net/music.m4a');
-  motorNode.loop = true;
-  musicNode.loop = true;
-
-  const motorSrc = audioCtx.createMediaElementSource(motorNode);
-  const musicSrc = audioCtx.createMediaElementSource(musicNode);
-  motorSrc.connect(motorGain);
-  musicSrc.connect(musicGain);
+  try {
+    const motorSrc = audioCtx.createMediaElementSource(motorNode);
+    const musicSrc = audioCtx.createMediaElementSource(musicNode);
+    motorSrc.connect(motorGain);
+    musicSrc.connect(musicGain);
+  } catch(e) {
+    // fallback: direct volume control
+    motorNode.volume = 1;
+    musicNode.volume = 0;
+    audioCtx = null;
+  }
 
   motorNode.play().catch(e => console.warn('motor', e));
   musicNode.play().catch(e => console.warn('music', e));
@@ -377,8 +389,13 @@ function setX(v, drag) {
 
 function setY(v, drag) {
   const t = v / 100;
-  if (motorGain) motorGain.gain.setTargetAtTime(1 - t, audioCtx.currentTime, 0.05);
-  if (musicGain) musicGain.gain.setTargetAtTime(t, audioCtx.currentTime, 0.05);
+  if (motorGain && audioCtx) {
+    motorGain.gain.setTargetAtTime(1 - t, audioCtx.currentTime, 0.05);
+    musicGain.gain.setTargetAtTime(t, audioCtx.currentTime, 0.05);
+  } else if (motorNode) {
+    motorNode.volume = 1 - t;
+    musicNode.volume = t;
+  }
   lblMusic.className = 'lbl' + (t >= 0.5 ? ' on' : '');
   lblMotor.className = 'lbl' + (t < 0.5 ? ' on' : '');
   pctMusic.textContent = Math.round(t * 100) + '%';
