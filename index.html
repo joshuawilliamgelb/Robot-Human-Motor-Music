@@ -270,7 +270,6 @@ function drawFrame() {
 }
 
 function setupAudio() {
-  // create context synchronously in gesture — critical for mobile
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
   motorGain = audioCtx.createGain();
@@ -280,28 +279,45 @@ function setupAudio() {
   motorGain.connect(audioCtx.destination);
   musicGain.connect(audioCtx.destination);
 
-  // load via fetch into BufferSource — reliable on all platforms
-  async function load(url, gainNode) {
-    const res = await fetch(url, { credentials: 'omit' });
-    const buf = await res.arrayBuffer();
-    const decoded = await audioCtx.decodeAudioData(buf);
+  // start silent 1-sample buffers immediately in gesture to unlock audio
+  function startSilent(gainNode) {
+    const buf = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
     const src = audioCtx.createBufferSource();
-    src.buffer = decoded;
+    src.buffer = buf;
     src.loop = true;
     src.connect(gainNode);
     src.start(0);
     return src;
   }
+  motorNode = startSilent(motorGain);
+  musicNode = startSilent(musicGain);
 
   const dbg = document.getElementById('dbg');
+  dbg.textContent = 'ctx:' + audioCtx.state;
 
-  load('https://tiqrobothuman.b-cdn.net/motor.m4a', motorGain)
-    .then(src => { motorNode = src; dbg.textContent = 'motor ok'; })
-    .catch(e => { dbg.textContent = 'motor fail: ' + e.message; console.warn('motor load failed', e); });
+  // load real audio and swap in
+  async function loadAndSwap(url, gainNode, isMusicTrack) {
+    const res = await fetch(url, { credentials: 'omit' });
+    const arr = await res.arrayBuffer();
+    const decoded = await audioCtx.decodeAudioData(arr);
+    // stop silent placeholder
+    if (isMusicTrack) { try { musicNode.stop(); } catch(e){} }
+    else { try { motorNode.stop(); } catch(e){} }
+    // start real buffer
+    const src = audioCtx.createBufferSource();
+    src.buffer = decoded;
+    src.loop = true;
+    src.connect(gainNode);
+    src.start(0);
+    if (isMusicTrack) musicNode = src;
+    else motorNode = src;
+    dbg.textContent += isMusicTrack ? ' music✓' : ' motor✓';
+  }
 
-  load('https://tiqrobothuman.b-cdn.net/music.m4a', musicGain)
-    .then(src => { musicNode = src; dbg.textContent += ' music ok ctx:' + audioCtx.state; })
-    .catch(e => { dbg.textContent += ' music fail: ' + e.message; console.warn('music load failed', e); });
+  loadAndSwap('https://tiqrobothuman.b-cdn.net/motor.m4a', motorGain, false)
+    .catch(e => { dbg.textContent += ' motorFail:' + e.message; });
+  loadAndSwap('https://tiqrobothuman.b-cdn.net/music.m4a', musicGain, true)
+    .catch(e => { dbg.textContent += ' musicFail:' + e.message; });
 }
 
 function handleTap() {
