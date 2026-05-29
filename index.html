@@ -269,8 +269,11 @@ function drawFrame() {
   rafId = requestAnimationFrame(drawFrame);
 }
 
-function setupAudio() {
+async function setupAudio() {
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  // force resume — must be called in gesture on iOS
+  try { await audioCtx.resume(); } catch(e) {}
 
   motorGain = audioCtx.createGain();
   musicGain = audioCtx.createGain();
@@ -279,7 +282,7 @@ function setupAudio() {
   motorGain.connect(audioCtx.destination);
   musicGain.connect(audioCtx.destination);
 
-  // start silent 1-sample buffers immediately in gesture to unlock audio
+  // start silent 1-sample buffers immediately to unlock audio output
   function startSilent(gainNode) {
     const buf = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
     const src = audioCtx.createBufferSource();
@@ -328,7 +331,7 @@ function handleTap() {
     poster.classList.add('hidden');
     vidEvo.play().catch(e => {});
     vidJoshua.play().catch(e => {});
-    setupAudio();
+    setupAudio().then(() => { document.getElementById('dbg').textContent += ' setup done'; });
     rafId = requestAnimationFrame(drawFrame);
 
   } else if (playing) {
