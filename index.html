@@ -15,11 +15,9 @@ html, body {
 #stage {
   width: 100vw;
   height: 100vh;
-  height: calc(var(--win-h, 100vh));
   display: flex; align-items: center; justify-content: center;
   background: #000;
 }
-
 :root {
   --vh: 75vh;
   --vw: calc(75vh * 9 / 16);
@@ -35,16 +33,14 @@ html, body {
     --gap: 4vw;
     --thumb: 20px;
     --label-pad-y: 14px;
-    --label-pad-x: 12px;
+    --label-pad-x: 14px;
   }
 }
-
 #wrap {
   display: inline-grid;
   grid-template-columns: auto var(--gap) var(--vw);
   grid-template-rows: var(--vh) var(--gap) auto;
 }
-
 #y-track-cell {
   grid-column: 1; grid-row: 1;
   display: flex; flex-direction: row;
@@ -75,7 +71,6 @@ html, body {
   width: var(--thumb); height: var(--thumb); border-radius: 50%;
   background: #fff; border: none;
 }
-
 #video-cell {
   grid-column: 3; grid-row: 1;
   position: relative; background: #000; overflow: hidden; cursor: pointer;
@@ -103,7 +98,6 @@ html, body {
   font-size: 9px; letter-spacing: 0.18em;
   text-transform: uppercase; color: rgba(255,255,255,0.5);
 }
-
 #x-track-cell {
   grid-column: 3; grid-row: 3;
   display: flex; flex-direction: column;
@@ -112,11 +106,8 @@ html, body {
 #x-slider {
   width: 100%; -webkit-appearance: none; appearance: none;
   height: 1px; background: #2a2a2a; outline: none;
-  cursor: ew-resize; display: block; margin: 0 0 0 0; padding: 0;
+  cursor: ew-resize; display: block; margin: 0; padding: 0;
   touch-action: none;
-}
-#x-labels {
-  margin-top: calc(var(--label-pad-x) + 2px);
 }
 #x-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -127,7 +118,10 @@ html, body {
   width: var(--thumb); height: var(--thumb); border-radius: 50%;
   background: #fff; border: none;
 }
-#x-labels { display: flex; justify-content: space-between; }
+#x-labels {
+  display: flex; justify-content: space-between;
+  margin-top: var(--label-pad-x);
+}
 .x-end { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .x-end.right { align-items: flex-end; }
 .lbl {
@@ -144,6 +138,7 @@ html, body {
 </style>
 </head>
 <body>
+
 <div id="stage">
   <div id="wrap">
     <div id="y-track-cell">
@@ -186,7 +181,9 @@ html, body {
   </div>
 </div>
 
-<div id="dbg" style="position:fixed;bottom:10px;left:10px;color:#fff;font-size:11px;z-index:999;background:rgba(0,0,0,0.7);padding:4px 8px;pointer-events:none;">waiting...</div>
+<!-- audio elements: preloaded, ready to go -->
+<audio id="aud-motor" src="https://tiqrobothuman.b-cdn.net/motor.m4a" loop preload="auto"></audio>
+<audio id="aud-music" src="https://tiqrobothuman.b-cdn.net/music.m4a" loop preload="auto"></audio>
 
 <video id="vid-evo" src="https://tiqrobothuman.b-cdn.net/evo.mp4"
   muted playsinline preload="auto" style="display:none"></video>
@@ -194,17 +191,19 @@ html, body {
   muted playsinline preload="auto" style="display:none"></video>
 
 <script>
-// fix Chrome mobile vh
-function setWinH() {
+// fix Chrome mobile 100vh
+function setVh() {
   document.documentElement.style.setProperty('--win-h', window.innerHeight + 'px');
 }
-setWinH();
-window.addEventListener('resize', setWinH);
+setVh();
+window.addEventListener('resize', setVh);
 
 const xEl = document.getElementById('x-slider');
 const yEl = document.getElementById('y-slider');
 const vidEvo = document.getElementById('vid-evo');
 const vidJoshua = document.getElementById('vid-joshua');
+const audMotor = document.getElementById('aud-motor');
+const audMusic = document.getElementById('aud-music');
 const videoCell = document.getElementById('video-cell');
 const overlay = document.getElementById('play-overlay');
 const poster = document.getElementById('poster');
@@ -229,11 +228,11 @@ let looping = false;
 let rafId = null;
 let blendX = 0;
 
-// Web Audio for reliable mobile volume control
-let audioCtx = null, motorNode, musicNode, motorGain, musicGain;
-let motorReady = false, musicReady = false;
-let targetMotor = 1, targetMusic = 0;
+let audioCtx = null;
+let motorGain = null;
+let musicGain = null;
 
+// hi-dpi canvas
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   const w = videoCell.offsetWidth;
@@ -245,7 +244,10 @@ function resizeCanvas() {
   ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
+window.addEventListener('resize', () => {
+  ctx2d.setTransform(1,0,0,1,0,0);
+  resizeCanvas();
+});
 
 function drawFrame() {
   if (!playing) return;
@@ -262,76 +264,51 @@ function drawFrame() {
     looping = true;
     vidEvo.currentTime = 0;
     vidJoshua.currentTime = 0;
-    if (motorNode) { motorNode.currentTime = 0; }
-    if (musicNode) { musicNode.currentTime = 0; }
+    audMotor.currentTime = 0;
+    audMusic.currentTime = 0;
     setTimeout(() => { looping = false; }, 600);
   }
   rafId = requestAnimationFrame(drawFrame);
 }
 
-async function setupAudio() {
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-  // force resume — must be called in gesture on iOS
-  try { await audioCtx.resume(); } catch(e) {}
-
-  motorGain = audioCtx.createGain();
-  musicGain = audioCtx.createGain();
-  motorGain.gain.value = 1;
-  musicGain.gain.value = 0;
-  motorGain.connect(audioCtx.destination);
-  musicGain.connect(audioCtx.destination);
-
-  // start silent 1-sample buffers immediately to unlock audio output
-  function startSilent(gainNode) {
-    const buf = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
-    const src = audioCtx.createBufferSource();
-    src.buffer = buf;
-    src.loop = true;
-    src.connect(gainNode);
-    src.start(0);
-    return src;
-  }
-  motorNode = startSilent(motorGain);
-  musicNode = startSilent(musicGain);
-
-  const dbg = document.getElementById('dbg');
-  dbg.textContent = 'ctx:' + audioCtx.state;
-
-  // load real audio and swap in
-  async function loadAndSwap(url, gainNode, isMusicTrack) {
-    const res = await fetch(url, { credentials: 'omit' });
-    const arr = await res.arrayBuffer();
-    const decoded = await audioCtx.decodeAudioData(arr);
-    // stop silent placeholder
-    if (isMusicTrack) { try { musicNode.stop(); } catch(e){} }
-    else { try { motorNode.stop(); } catch(e){} }
-    // start real buffer
-    const src = audioCtx.createBufferSource();
-    src.buffer = decoded;
-    src.loop = true;
-    src.connect(gainNode);
-    src.start(0);
-    if (isMusicTrack) musicNode = src;
-    else motorNode = src;
-    dbg.textContent += isMusicTrack ? ' music✓' : ' motor✓';
-  }
-
-  loadAndSwap('https://tiqrobothuman.b-cdn.net/motor.m4a', motorGain, false)
-    .catch(e => { dbg.textContent += ' motorFail:' + e.message; });
-  loadAndSwap('https://tiqrobothuman.b-cdn.net/music.m4a', musicGain, true)
-    .catch(e => { dbg.textContent += ' musicFail:' + e.message; });
-}
-
-function handleTap() {
+async function handleTap() {
   if (!started) {
     started = true;
     playing = true;
+
     overlay.classList.add('hidden');
     poster.classList.add('hidden');
+
+    // 1. create AudioContext synchronously in gesture
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // 2. resume immediately — must be in gesture on iOS
+    await audioCtx.resume();
+
+    // 3. build gain graph
+    motorGain = audioCtx.createGain();
+    musicGain = audioCtx.createGain();
+    motorGain.gain.value = 1;
+    musicGain.gain.value = 0;
+    motorGain.connect(audioCtx.destination);
+    musicGain.connect(audioCtx.destination);
+
+    // 4. route audio elements through gain nodes
+    const motorSrc = audioCtx.createMediaElementSource(audMotor);
+    const musicSrc = audioCtx.createMediaElementSource(audMusic);
+    motorSrc.connect(motorGain);
+    musicSrc.connect(musicGain);
+
+    // 5. set element volumes to full (gain nodes handle crossfade)
+    audMotor.volume = 1;
+    audMusic.volume = 1;
+
+    // 6. play everything
     vidEvo.play().catch(e => {});
     vidJoshua.play().catch(e => {});
-    setupAudio().then(() => { document.getElementById('dbg').textContent += ' setup done'; });
+    audMotor.play().catch(e => {});
+    audMusic.play().catch(e => {});
+
     rafId = requestAnimationFrame(drawFrame);
 
   } else if (playing) {
@@ -339,14 +316,18 @@ function handleTap() {
     if (rafId) cancelAnimationFrame(rafId);
     vidEvo.pause();
     vidJoshua.pause();
-    if (audioCtx) audioCtx.suspend();
+    audMotor.pause();
+    audMusic.pause();
     overlay.classList.remove('hidden');
 
   } else {
     playing = true;
+    audMotor.currentTime = vidEvo.currentTime;
+    audMusic.currentTime = vidEvo.currentTime;
     vidEvo.play().catch(e => {});
     vidJoshua.play().catch(e => {});
-    if (audioCtx) audioCtx.resume();
+    audMotor.play().catch(e => {});
+    audMusic.play().catch(e => {});
     overlay.classList.add('hidden');
     rafId = requestAnimationFrame(drawFrame);
   }
@@ -361,7 +342,8 @@ document.addEventListener('visibilitychange', () => {
     if (rafId) cancelAnimationFrame(rafId);
     vidEvo.pause();
     vidJoshua.pause();
-    if (audioCtx) audioCtx.suspend();
+    audMotor.pause();
+    audMusic.pause();
     overlay.classList.remove('hidden');
   }
 });
@@ -408,12 +390,9 @@ function setX(v, drag) {
 
 function setY(v, drag) {
   const t = v / 100;
-  if (audioCtx && motorGain && musicGain) {
+  if (motorGain && audioCtx) {
     motorGain.gain.setTargetAtTime(1 - t, audioCtx.currentTime, 0.05);
     musicGain.gain.setTargetAtTime(t, audioCtx.currentTime, 0.05);
-  } else {
-    if (motorNode) motorNode.volume = Math.max(0, Math.min(1, 1 - t));
-    if (musicNode) musicNode.volume = Math.max(0, Math.min(1, t));
   }
   lblMusic.className = 'lbl' + (t >= 0.5 ? ' on' : '');
   lblMotor.className = 'lbl' + (t < 0.5 ? ' on' : '');
