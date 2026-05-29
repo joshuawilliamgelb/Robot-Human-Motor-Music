@@ -273,32 +273,8 @@ function drawFrame() {
 function setupAudio() {
   motorNode = document.getElementById('aud-motor');
   musicNode = document.getElementById('aud-music');
-
-  // create and resume AudioContext synchronously in gesture
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  audioCtx.resume();
-
-  motorGain = audioCtx.createGain();
-  musicGain = audioCtx.createGain();
-  motorGain.gain.value = 1;
-  musicGain.gain.value = 0;
-  motorGain.connect(audioCtx.destination);
-  musicGain.connect(audioCtx.destination);
-
-  try {
-    const motorSrc = audioCtx.createMediaElementSource(motorNode);
-    const musicSrc = audioCtx.createMediaElementSource(musicNode);
-    motorSrc.connect(motorGain);
-    musicSrc.connect(musicGain);
-    motorNode.volume = 1;
-    musicNode.volume = 1; // volume handled by gainNode, set element to full
-  } catch(e) {
-    console.warn('MediaElementSource failed, using volume fallback', e);
-    motorNode.volume = 1;
-    musicNode.volume = 0;
-    audioCtx = null;
-  }
-
+  motorNode.volume = 1;
+  musicNode.volume = 0;
   motorNode.play().catch(e => console.warn('motor', e));
   musicNode.play().catch(e => console.warn('music', e));
 }
@@ -393,13 +369,8 @@ function setX(v, drag) {
 
 function setY(v, drag) {
   const t = v / 100;
-  if (motorGain && audioCtx) {
-    motorGain.gain.setTargetAtTime(1 - t, audioCtx.currentTime, 0.05);
-    musicGain.gain.setTargetAtTime(t, audioCtx.currentTime, 0.05);
-  } else if (motorNode) {
-    motorNode.volume = 1 - t;
-    musicNode.volume = t;
-  }
+  if (motorNode) motorNode.volume = Math.max(0, Math.min(1, 1 - t));
+  if (musicNode) musicNode.volume = Math.max(0, Math.min(1, t));
   lblMusic.className = 'lbl' + (t >= 0.5 ? ' on' : '');
   lblMotor.className = 'lbl' + (t < 0.5 ? ' on' : '');
   pctMusic.textContent = Math.round(t * 100) + '%';
