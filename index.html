@@ -46,6 +46,7 @@ html, body {
 #y-labels {
   display: flex; flex-direction: column;
   justify-content: space-between; align-items: flex-end;
+  padding: 8px 0;
 }
 .y-end { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 #y-track { width: 12px; display: flex; align-items: center; justify-content: center; }
@@ -59,11 +60,15 @@ html, body {
 }
 #y-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 28px; height: 28px; border-radius: 50%;
+  width: 12px; height: 12px; border-radius: 50%;
   background: #fff; border: none;
 }
 #y-slider::-moz-range-thumb {
-  width: 28px; height: 28px; border-radius: 50%; background: #fff; border: none;
+  width: 12px; height: 12px; border-radius: 50%; background: #fff; border: none;
+}
+@media (max-width: 600px) {
+  #y-slider::-webkit-slider-thumb { width: 20px; height: 20px; }
+  #y-slider::-moz-range-thumb { width: 20px; height: 20px; }
 }
 
 #video-cell {
@@ -107,13 +112,17 @@ html, body {
 }
 #x-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 28px; height: 28px; border-radius: 50%;
+  width: 12px; height: 12px; border-radius: 50%;
   background: #fff; border: none;
 }
 #x-slider::-moz-range-thumb {
-  width: 28px; height: 28px; border-radius: 50%; background: #fff; border: none;
+  width: 12px; height: 12px; border-radius: 50%; background: #fff; border: none;
 }
-#x-labels { display: flex; justify-content: space-between; }
+@media (max-width: 600px) {
+  #x-slider::-webkit-slider-thumb { width: 20px; height: 20px; }
+  #x-slider::-moz-range-thumb { width: 20px; height: 20px; }
+}
+#x-labels { display: flex; justify-content: space-between; padding: 0 4px; }
 .x-end { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .x-end.right { align-items: flex-end; }
 .lbl {
@@ -250,6 +259,8 @@ function handleTap() {
     playing = true;
     overlay.classList.add('hidden');
     poster.classList.add('hidden');
+    audMotor.volume = 1;
+    audMusic.volume = 0;
     vidEvo.play();
     vidJoshua.play();
     audMotor.play();
