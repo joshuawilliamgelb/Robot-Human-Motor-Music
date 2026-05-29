@@ -17,11 +17,32 @@ html, body {
   display: flex; align-items: center; justify-content: center;
   background: #000;
 }
+
+/* --- DESKTOP --- */
 #wrap {
   display: inline-grid;
   grid-template-columns: auto 3vh 42.1875vh;
   grid-template-rows: 75vh 3vh auto;
 }
+#y-slider {
+  -webkit-appearance: none; appearance: none;
+  writing-mode: vertical-lr; direction: rtl;
+  width: 1px; height: 75vh;
+  background: #2a2a2a; outline: none;
+  cursor: ns-resize; padding: 0; margin: 0; flex-shrink: 0;
+}
+
+/* --- MOBILE --- */
+@media (max-width: 600px) {
+  #wrap {
+    grid-template-columns: auto 4vw 78vw;
+    grid-template-rows: calc(78vw * 16 / 9) 4vw auto;
+  }
+  #y-slider {
+    height: calc(78vw * 16 / 9);
+  }
+}
+
 #y-track-cell {
   grid-column: 1; grid-row: 1;
   display: flex; flex-direction: row;
@@ -34,13 +55,6 @@ html, body {
 }
 .y-end { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 #y-track { width: 12px; display: flex; align-items: center; justify-content: center; }
-#y-slider {
-  -webkit-appearance: none; appearance: none;
-  writing-mode: vertical-lr; direction: rtl;
-  width: 1px; height: 75vh;
-  background: #2a2a2a; outline: none;
-  cursor: ns-resize; padding: 0; margin: 0; flex-shrink: 0;
-}
 #y-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 12px; height: 12px; border-radius: 50%;
@@ -49,6 +63,7 @@ html, body {
 #y-slider::-moz-range-thumb {
   width: 12px; height: 12px; border-radius: 50%; background: #fff; border: none;
 }
+
 #video-cell {
   grid-column: 3; grid-row: 1;
   position: relative; background: #000; overflow: hidden; cursor: pointer;
@@ -72,6 +87,7 @@ html, body {
   font-size: 9px; letter-spacing: 0.18em;
   text-transform: uppercase; color: rgba(255,255,255,0.5);
 }
+
 #x-track-cell {
   grid-column: 3; grid-row: 3;
   display: flex; flex-direction: column;
@@ -126,9 +142,12 @@ html, body {
     </div>
 
     <div id="video-cell">
-      <video id="vid-evo" src="https://tiqrobothuman.b-cdn.net/evo.mp4"
+      <video id="vid-evo"
+        src="https://tiqrobothuman.b-cdn.net/evo.mp4"
+        poster="https://tiqrobothuman.b-cdn.net/poster.jpg"
         muted playsinline preload="auto"></video>
-      <video id="vid-joshua" src="https://tiqrobothuman.b-cdn.net/joshua.mp4"
+      <video id="vid-joshua"
+        src="https://tiqrobothuman.b-cdn.net/joshua.mp4"
         muted playsinline preload="auto"></video>
       <div id="play-overlay">
         <span id="tap-label">tap to play</span>
@@ -151,7 +170,6 @@ html, body {
   </div>
 </div>
 
-<!-- audio elements: stream immediately, no fetch delay -->
 <audio id="aud-motor" src="https://tiqrobothuman.b-cdn.net/motor.m4a" loop preload="auto"></audio>
 <audio id="aud-music" src="https://tiqrobothuman.b-cdn.net/music.m4a" loop preload="auto"></audio>
 
@@ -179,59 +197,57 @@ const LOOP_THRESHOLD = 0.3;
 
 let started = false;
 let playing = false;
-let resyncing = false;
+let looping = false;
+let rafId = null;
 
 audMotor.volume = 1;
 audMusic.volume = 0;
 
 function syncLoop() {
-  if (!playing || resyncing) return;
+  if (!playing) return;
 
   const t = vidEvo.currentTime;
 
-  // resync loop point
-  if (t >= DURATION - LOOP_THRESHOLD) {
-    resyncing = true;
+  // hard resync at loop point
+  if (!looping && t >= DURATION - LOOP_THRESHOLD) {
+    looping = true;
     vidEvo.currentTime = 0;
     vidJoshua.currentTime = 0;
     audMotor.currentTime = 0;
     audMusic.currentTime = 0;
-    setTimeout(() => { resyncing = false; }, 500);
-    requestAnimationFrame(syncLoop);
-    return;
+    setTimeout(() => { looping = false; }, 600);
   }
 
-  // keep joshua tracking evo
-  const drift = Math.abs(vidJoshua.currentTime - t);
-  if (drift > 0.15) vidJoshua.currentTime = t;
-
-  // keep audio tracking evo
-  const audioDrift = Math.abs(audMotor.currentTime - t);
-  if (audioDrift > 0.15) {
-    audMotor.currentTime = t;
-    audMusic.currentTime = t;
+  if (!looping) {
+    // keep joshua in sync with evo
+    if (Math.abs(vidJoshua.currentTime - t) > 0.15) {
+      vidJoshua.currentTime = t;
+    }
+    // keep audio in sync with evo
+    if (Math.abs(audMotor.currentTime - t) > 0.15) {
+      audMotor.currentTime = t;
+      audMusic.currentTime = t;
+    }
   }
 
-  requestAnimationFrame(syncLoop);
+  rafId = requestAnimationFrame(syncLoop);
 }
 
 async function handleTap() {
   if (!started) {
     started = true;
     playing = true;
-
     overlay.classList.add('hidden');
     videoCell.classList.remove('paused');
-
-    vidEvo.play();
-    vidJoshua.play();
-    audMotor.play();
-    audMusic.play();
-
-    requestAnimationFrame(syncLoop);
+    try {
+      await Promise.all([vidEvo.play(), vidJoshua.play()]);
+      await Promise.all([audMotor.play(), audMusic.play()]);
+    } catch(e) { console.warn('play failed:', e); }
+    rafId = requestAnimationFrame(syncLoop);
 
   } else if (playing) {
     playing = false;
+    if (rafId) cancelAnimationFrame(rafId);
     vidEvo.pause();
     vidJoshua.pause();
     audMotor.pause();
@@ -241,20 +257,35 @@ async function handleTap() {
 
   } else {
     playing = true;
-    // resync audio to video before resuming
+    // resync audio to video position before resume
     audMotor.currentTime = vidEvo.currentTime;
     audMusic.currentTime = vidEvo.currentTime;
-    vidEvo.play();
-    vidJoshua.play();
-    audMotor.play();
-    audMusic.play();
     videoCell.classList.remove('paused');
     overlay.classList.add('hidden');
-    requestAnimationFrame(syncLoop);
+    try {
+      await Promise.all([vidEvo.play(), vidJoshua.play()]);
+      await Promise.all([audMotor.play(), audMusic.play()]);
+    } catch(e) { console.warn('resume failed:', e); }
+    rafId = requestAnimationFrame(syncLoop);
   }
 }
 
 videoCell.addEventListener('click', handleTap);
+
+// pause when tab hidden
+document.addEventListener('visibilitychange', () => {
+  if (!started || !playing) return;
+  if (document.hidden) {
+    playing = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    vidEvo.pause();
+    vidJoshua.pause();
+    audMotor.pause();
+    audMusic.pause();
+    videoCell.classList.add('paused');
+    overlay.classList.remove('hidden');
+  }
+});
 
 function setX(v, drag) {
   const t = v / 100;
@@ -288,21 +319,6 @@ yEl.addEventListener('touchend', () => setY(+yEl.value, false));
 
 setX(0, false);
 setY(0, false);
-
-document.addEventListener('visibilitychange', () => {
-  if (!started) return;
-  if (document.hidden) {
-    if (playing) {
-      playing = false;
-      vidEvo.pause();
-      vidJoshua.pause();
-      audMotor.pause();
-      audMusic.pause();
-      videoCell.classList.add('paused');
-      overlay.classList.remove('hidden');
-    }
-  }
-});
 </script>
 </body>
 </html>
