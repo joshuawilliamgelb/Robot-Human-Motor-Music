@@ -11,32 +11,30 @@ html, body {
   width: 100%; height: 100%;
   overflow: hidden;
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  touch-action: none;
 }
 #stage {
   width: 100vw; height: 100vh;
   display: flex; align-items: center; justify-content: center;
   background: #000;
 }
-#wrap {
-  display: inline-grid;
-  grid-template-columns: auto var(--gap) var(--vw);
-  grid-template-rows: var(--vh) var(--gap) auto;
-}
 
-/* desktop */
 :root {
   --vh: 75vh;
   --vw: calc(75vh * 9 / 16);
   --gap: 3vh;
 }
-/* mobile */
 @media (max-width: 600px) {
   :root {
     --vh: calc(72vw * 16 / 9);
     --vw: 72vw;
     --gap: 4vw;
   }
+}
+
+#wrap {
+  display: inline-grid;
+  grid-template-columns: auto var(--gap) var(--vw);
+  grid-template-rows: var(--vh) var(--gap) auto;
 }
 
 #y-track-cell {
@@ -57,37 +55,32 @@ html, body {
   width: 1px; height: var(--vh);
   background: #2a2a2a; outline: none;
   cursor: ns-resize; padding: 0; margin: 0; flex-shrink: 0;
+  touch-action: none;
 }
 #y-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 12px; height: 12px; border-radius: 50%;
+  width: 28px; height: 28px; border-radius: 50%;
   background: #fff; border: none;
 }
 #y-slider::-moz-range-thumb {
-  width: 12px; height: 12px; border-radius: 50%; background: #fff; border: none;
+  width: 28px; height: 28px; border-radius: 50%; background: #fff; border: none;
 }
 
 #video-cell {
   grid-column: 3; grid-row: 1;
   position: relative; background: #000; overflow: hidden; cursor: pointer;
 }
-
-/* canvas fills the cell */
 #blend-canvas {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
 }
-
-/* poster shown before play */
 #poster {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
-  object-fit: cover;
-  z-index: 2;
+  object-fit: cover; z-index: 2;
   transition: opacity 0.4s;
 }
 #poster.hidden { opacity: 0; pointer-events: none; }
-
 #play-overlay {
   position: absolute; inset: 0; z-index: 10;
   display: flex; align-items: flex-start; justify-content: center;
@@ -110,14 +103,15 @@ html, body {
   width: 100%; -webkit-appearance: none; appearance: none;
   height: 1px; background: #2a2a2a; outline: none;
   cursor: ew-resize; display: block; margin: 0 0 5px 0; padding: 0;
+  touch-action: none;
 }
 #x-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 12px; height: 12px; border-radius: 50%;
+  width: 28px; height: 28px; border-radius: 50%;
   background: #fff; border: none;
 }
 #x-slider::-moz-range-thumb {
-  width: 12px; height: 12px; border-radius: 50%; background: #fff; border: none;
+  width: 28px; height: 28px; border-radius: 50%; background: #fff; border: none;
 }
 #x-labels { display: flex; justify-content: space-between; }
 .x-end { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
@@ -178,15 +172,14 @@ html, body {
   </div>
 </div>
 
-<!-- hidden videos, no autoplay, no loop — we manage looping manually -->
-<video id="vid-evo"
-  src="https://tiqrobothuman.b-cdn.net/evo.mp4"
-  muted playsinline preload="auto"
-  style="display:none"></video>
-<video id="vid-joshua"
-  src="https://tiqrobothuman.b-cdn.net/joshua.mp4"
-  muted playsinline preload="auto"
-  style="display:none"></video>
+<video id="vid-evo" src="https://tiqrobothuman.b-cdn.net/evo.mp4"
+  muted playsinline preload="auto" style="display:none"></video>
+<video id="vid-joshua" src="https://tiqrobothuman.b-cdn.net/joshua.mp4"
+  muted playsinline preload="auto" style="display:none"></video>
+<audio id="aud-motor" src="https://tiqrobothuman.b-cdn.net/motor.m4a"
+  loop preload="auto"></audio>
+<audio id="aud-music" src="https://tiqrobothuman.b-cdn.net/music.m4a"
+  loop preload="auto"></audio>
 
 <script>
 const xEl = document.getElementById('x-slider');
@@ -197,7 +190,9 @@ const videoCell = document.getElementById('video-cell');
 const overlay = document.getElementById('play-overlay');
 const poster = document.getElementById('poster');
 const canvas = document.getElementById('blend-canvas');
-const ctx = canvas.getContext('2d');
+const ctx2d = canvas.getContext('2d');
+const audMotor = document.getElementById('aud-motor');
+const audMusic = document.getElementById('aud-music');
 
 const lblRobot = document.getElementById('lbl-robot');
 const lblHuman = document.getElementById('lbl-human');
@@ -215,20 +210,11 @@ let started = false;
 let playing = false;
 let looping = false;
 let rafId = null;
-let blendX = 0; // 0=evo, 1=human
+let blendX = 0;
 
-// Audio
-let audioCtx = null;
-let motorGain = null, musicGain = null;
-let motorSrc = null, musicSrc = null;
-let motorBuf = null, musicBuf = null;
-let audioReady = false;
-let audioPlayOffset = 0;
-let audioStartedAt = 0;
-let targetMotorGain = 1;
-let targetMusicGain = 0;
+audMotor.volume = 1;
+audMusic.volume = 0;
 
-// size canvas to match cell
 function resizeCanvas() {
   canvas.width = videoCell.offsetWidth;
   canvas.height = videoCell.offsetHeight;
@@ -236,156 +222,63 @@ function resizeCanvas() {
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
 
-// draw loop — composite evo + joshua onto canvas
 function drawFrame() {
   if (!playing) return;
-
   const w = canvas.width;
   const h = canvas.height;
-
-  // draw evo (base)
-  ctx.globalAlpha = 1;
-  ctx.drawImage(vidEvo, 0, 0, w, h);
-
-  // draw joshua on top with blendX opacity
+  ctx2d.globalAlpha = 1;
+  ctx2d.drawImage(vidEvo, 0, 0, w, h);
   if (blendX > 0) {
-    ctx.globalAlpha = blendX;
-    ctx.drawImage(vidJoshua, 0, 0, w, h);
+    ctx2d.globalAlpha = blendX;
+    ctx2d.drawImage(vidJoshua, 0, 0, w, h);
   }
-
-  // check loop point
   const t = vidEvo.currentTime;
   if (!looping && t >= DURATION - LOOP_THRESHOLD) {
-    doLoop();
+    looping = true;
+    vidEvo.currentTime = 0;
+    vidJoshua.currentTime = 0;
+    audMotor.currentTime = 0;
+    audMusic.currentTime = 0;
+    setTimeout(() => { looping = false; }, 600);
   }
-
   rafId = requestAnimationFrame(drawFrame);
 }
 
-function doLoop() {
-  looping = true;
-  vidEvo.currentTime = 0;
-  vidJoshua.currentTime = 0;
-  // restart audio sources from 0
-  if (audioReady) {
-    restartAudio(0);
-  }
-  setTimeout(() => { looping = false; }, 500);
-}
-
-// --- AUDIO ---
-function createAndStartSources(offset) {
-  if (motorSrc) { try { motorSrc.stop(); } catch(e){} }
-  if (musicSrc) { try { musicSrc.stop(); } catch(e){} }
-
-  motorSrc = audioCtx.createBufferSource();
-  motorSrc.buffer = motorBuf;
-  motorSrc.connect(motorGain);
-
-  musicSrc = audioCtx.createBufferSource();
-  musicSrc.buffer = musicBuf;
-  musicSrc.connect(musicGain);
-
-  const when = audioCtx.currentTime;
-  motorSrc.start(when, offset);
-  musicSrc.start(when, offset);
-  audioStartedAt = when;
-  audioPlayOffset = offset;
-}
-
-function restartAudio(offset) {
-  if (!audioReady) return;
-  createAndStartSources(offset);
-}
-
-function pauseAudio() {
-  if (!audioReady) return;
-  audioPlayOffset = audioCtx.currentTime - audioStartedAt + audioPlayOffset;
-  audioCtx.suspend();
-}
-
-function resumeAudio() {
-  if (!audioReady) return;
-  audioCtx.resume().then(() => {
-    // resync audio to video
-    const videoT = vidEvo.currentTime;
-    createAndStartSources(videoT);
-  });
-}
-
-async function loadAudio() {
-  async function fetchBuf(url) {
-    const r = await fetch(url);
-    const ab = await r.arrayBuffer();
-    return audioCtx.decodeAudioData(ab);
-  }
-  try {
-    [motorBuf, musicBuf] = await Promise.all([
-      fetchBuf('https://tiqrobothuman.b-cdn.net/motor.m4a'),
-      fetchBuf('https://tiqrobothuman.b-cdn.net/music.m4a')
-    ]);
-    motorGain = audioCtx.createGain();
-    musicGain = audioCtx.createGain();
-    motorGain.gain.value = targetMotorGain;
-    musicGain.gain.value = targetMusicGain;
-    motorGain.connect(audioCtx.destination);
-    musicGain.connect(audioCtx.destination);
-    audioReady = true;
-    // start audio synced to where video is now
-    createAndStartSources(vidEvo.currentTime);
-  } catch(e) {
-    console.warn('audio load failed', e);
-  }
-}
-
-// --- TAP HANDLER ---
 function handleTap() {
   if (!started) {
     started = true;
     playing = true;
-
-    // hide overlay and poster immediately
     overlay.classList.add('hidden');
     poster.classList.add('hidden');
-
-    // start videos
     vidEvo.play();
     vidJoshua.play();
-
-    // create AudioContext synchronously inside gesture
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    // load audio in background — no await, no blocking
-    loadAudio();
-
+    audMotor.play();
+    audMusic.play();
     rafId = requestAnimationFrame(drawFrame);
-
   } else if (playing) {
-    // pause
     playing = false;
     if (rafId) cancelAnimationFrame(rafId);
     vidEvo.pause();
     vidJoshua.pause();
-    pauseAudio();
+    audMotor.pause();
+    audMusic.pause();
     overlay.classList.remove('hidden');
-
   } else {
-    // resume
     playing = true;
-    overlay.classList.add('hidden');
+    audMotor.currentTime = vidEvo.currentTime;
+    audMusic.currentTime = vidEvo.currentTime;
     vidEvo.play();
     vidJoshua.play();
-    resumeAudio();
+    audMotor.play();
+    audMusic.play();
+    overlay.classList.add('hidden');
     rafId = requestAnimationFrame(drawFrame);
   }
 }
 
+// video cell tap — but not from slider touches
 videoCell.addEventListener('click', handleTap);
-videoCell.addEventListener('touchend', (e) => {
-  e.preventDefault();
-  handleTap();
-});
 
-// pause on tab hidden
 document.addEventListener('visibilitychange', () => {
   if (!started || !playing) return;
   if (document.hidden) {
@@ -393,12 +286,47 @@ document.addEventListener('visibilitychange', () => {
     if (rafId) cancelAnimationFrame(rafId);
     vidEvo.pause();
     vidJoshua.pause();
-    pauseAudio();
+    audMotor.pause();
+    audMusic.pause();
     overlay.classList.remove('hidden');
   }
 });
 
-// --- SLIDERS ---
+// custom touch handling for sliders so they don't trigger video tap
+function setupSliderTouch(slider, isVertical) {
+  let startVal, startPos;
+
+  slider.addEventListener('touchstart', (e) => {
+    e.stopPropagation();
+    startVal = +slider.value;
+    startPos = isVertical ? e.touches[0].clientY : e.touches[0].clientX;
+  }, { passive: true });
+
+  slider.addEventListener('touchmove', (e) => {
+    e.stopPropagation();
+    const pos = isVertical ? e.touches[0].clientY : e.touches[0].clientX;
+    const rect = slider.getBoundingClientRect();
+    const size = isVertical ? rect.height : rect.width;
+    const delta = (pos - startPos) / size * 100;
+    // vertical slider is inverted (top=max)
+    const newVal = isVertical
+      ? Math.max(0, Math.min(100, startVal - delta))
+      : Math.max(0, Math.min(100, startVal + delta));
+    slider.value = newVal;
+    if (isVertical) setY(newVal, true);
+    else setX(newVal, true);
+  }, { passive: true });
+
+  slider.addEventListener('touchend', (e) => {
+    e.stopPropagation();
+    if (isVertical) setY(+slider.value, false);
+    else setX(+slider.value, false);
+  }, { passive: true });
+}
+
+setupSliderTouch(xEl, false);
+setupSliderTouch(yEl, true);
+
 function setX(v, drag) {
   const t = v / 100;
   blendX = t;
@@ -412,10 +340,8 @@ function setX(v, drag) {
 
 function setY(v, drag) {
   const t = v / 100;
-  targetMotorGain = 1 - t;
-  targetMusicGain = t;
-  if (motorGain) motorGain.gain.setTargetAtTime(1 - t, audioCtx.currentTime, 0.05);
-  if (musicGain) musicGain.gain.setTargetAtTime(t, audioCtx.currentTime, 0.05);
+  audMotor.volume = 1 - t;
+  audMusic.volume = t;
   lblMusic.className = 'lbl' + (t >= 0.5 ? ' on' : '');
   lblMotor.className = 'lbl' + (t < 0.5 ? ' on' : '');
   pctMusic.textContent = Math.round(t * 100) + '%';
@@ -426,10 +352,8 @@ function setY(v, drag) {
 
 xEl.addEventListener('input', () => setX(+xEl.value, true));
 xEl.addEventListener('mouseup', () => setX(+xEl.value, false));
-xEl.addEventListener('touchend', (e) => { e.stopPropagation(); setX(+xEl.value, false); });
 yEl.addEventListener('input', () => setY(+yEl.value, true));
 yEl.addEventListener('mouseup', () => setY(+yEl.value, false));
-yEl.addEventListener('touchend', (e) => { e.stopPropagation(); setY(+yEl.value, false); });
 
 setX(0, false);
 setY(0, false);
