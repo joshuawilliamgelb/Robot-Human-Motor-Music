@@ -13,7 +13,9 @@ html, body {
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 #stage {
-  width: 100vw; height: 100vh;
+  width: 100vw;
+  height: 100vh;
+  height: calc(var(--win-h, 100vh));
   display: flex; align-items: center; justify-content: center;
   background: #000;
 }
@@ -23,15 +25,14 @@ html, body {
   --vw: calc(75vh * 9 / 16);
   --gap: 3vh;
   --thumb: 12px;
-  --label-pad: 8px;
+  --label-pad-y: 8px;
+  --label-pad-x: 4px;
 }
 @media (max-width: 600px) {
   :root {
-    --vh: calc(72vw * 16 / 9);
-    --vw: 72vw;
-    --gap: 4vw;
     --thumb: 20px;
-    --label-pad: 14px;
+    --label-pad-y: 14px;
+    --label-pad-x: 12px;
   }
 }
 
@@ -50,7 +51,7 @@ html, body {
 #y-labels {
   display: flex; flex-direction: column;
   justify-content: space-between; align-items: flex-end;
-  padding: var(--label-pad) 0;
+  padding: var(--label-pad-y) 0;
 }
 .y-end { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 #y-track { width: calc(var(--thumb) + 2px); display: flex; align-items: center; justify-content: center; }
@@ -120,7 +121,7 @@ html, body {
   width: var(--thumb); height: var(--thumb); border-radius: 50%;
   background: #fff; border: none;
 }
-#x-labels { display: flex; justify-content: space-between; padding: 0 calc(var(--label-pad) - 4px); }
+#x-labels { display: flex; justify-content: space-between; padding: 0 var(--label-pad-x); }
 .x-end { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .x-end.right { align-items: flex-end; }
 .lbl {
@@ -183,12 +184,15 @@ html, body {
   muted playsinline preload="auto" style="display:none"></video>
 <video id="vid-joshua" src="https://tiqrobothuman.b-cdn.net/joshua.mp4"
   muted playsinline preload="auto" style="display:none"></video>
-<audio id="aud-motor" src="https://tiqrobothuman.b-cdn.net/motor.m4a"
-  loop preload="auto"></audio>
-<audio id="aud-music" src="https://tiqrobothuman.b-cdn.net/music.m4a"
-  loop preload="auto"></audio>
 
 <script>
+// fix Chrome mobile vh
+function setWinH() {
+  document.documentElement.style.setProperty('--win-h', window.innerHeight + 'px');
+}
+setWinH();
+window.addEventListener('resize', setWinH);
+
 const xEl = document.getElementById('x-slider');
 const yEl = document.getElementById('y-slider');
 const vidEvo = document.getElementById('vid-evo');
@@ -198,8 +202,6 @@ const overlay = document.getElementById('play-overlay');
 const poster = document.getElementById('poster');
 const canvas = document.getElementById('blend-canvas');
 const ctx2d = canvas.getContext('2d');
-const audMotor = document.getElementById('aud-motor');
-const audMusic = document.getElementById('aud-music');
 
 const lblRobot = document.getElementById('lbl-robot');
 const lblHuman = document.getElementById('lbl-human');
@@ -219,27 +221,23 @@ let looping = false;
 let rafId = null;
 let blendX = 0;
 
-// set initial volumes before any play
-audMotor.volume = 1;
-audMusic.volume = 0;
+// Web Audio for reliable mobile volume control
+let audioCtx, motorNode, musicNode, motorGain, musicGain;
+let motorReady = false, musicReady = false;
+let targetMotor = 1, targetMusic = 0;
 
-// hi-dpi canvas
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   const w = videoCell.offsetWidth;
   const h = videoCell.offsetHeight;
   canvas.width = w * dpr;
   canvas.height = h * dpr;
-  ctx2d.scale(dpr, dpr);
-  // store css size for drawImage
   canvas._cssW = w;
   canvas._cssH = h;
+  ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 resizeCanvas();
-window.addEventListener('resize', () => {
-  ctx2d.setTransform(1, 0, 0, 1, 0, 0);
-  resizeCanvas();
-});
+window.addEventListener('resize', resizeCanvas);
 
 function drawFrame() {
   if (!playing) return;
@@ -256,40 +254,48 @@ function drawFrame() {
     looping = true;
     vidEvo.currentTime = 0;
     vidJoshua.currentTime = 0;
-    audMotor.currentTime = 0;
-    audMusic.currentTime = 0;
+    if (motorNode) { motorNode.currentTime = 0; }
+    if (musicNode) { musicNode.currentTime = 0; }
     setTimeout(() => { looping = false; }, 600);
   }
   rafId = requestAnimationFrame(drawFrame);
 }
 
-async function handleTap() {
+function setupAudio() {
+  // create AudioContext synchronously in gesture
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  motorGain = audioCtx.createGain();
+  musicGain = audioCtx.createGain();
+  motorGain.gain.value = 1;
+  musicGain.gain.value = 0;
+  motorGain.connect(audioCtx.destination);
+  musicGain.connect(audioCtx.destination);
+
+  // connect audio elements through Web Audio graph
+  motorNode = new Audio('https://tiqrobothuman.b-cdn.net/motor.m4a');
+  musicNode = new Audio('https://tiqrobothuman.b-cdn.net/music.m4a');
+  motorNode.loop = true;
+  musicNode.loop = true;
+
+  const motorSrc = audioCtx.createMediaElementSource(motorNode);
+  const musicSrc = audioCtx.createMediaElementSource(musicNode);
+  motorSrc.connect(motorGain);
+  musicSrc.connect(musicGain);
+
+  motorNode.play().catch(e => console.warn('motor', e));
+  musicNode.play().catch(e => console.warn('music', e));
+}
+
+function handleTap() {
   if (!started) {
     started = true;
     playing = true;
     overlay.classList.add('hidden');
     poster.classList.add('hidden');
-
-    // unlock audio on iOS/Chrome mobile — create silent context in gesture
-    try {
-      const ac = new (window.AudioContext || window.webkitAudioContext)();
-      const buf = ac.createBuffer(1, 1, 22050);
-      const src = ac.createBufferSource();
-      src.buffer = buf;
-      src.connect(ac.destination);
-      src.start(0);
-      await ac.resume();
-    } catch(e) {}
-
-    // set volumes explicitly then play
-    audMotor.volume = 1;
-    audMusic.volume = 0;
-
-    try { await vidEvo.play(); } catch(e) {}
-    try { await vidJoshua.play(); } catch(e) {}
-    try { await audMotor.play(); } catch(e) { console.warn('motor fail', e); }
-    try { await audMusic.play(); } catch(e) { console.warn('music fail', e); }
-
+    vidEvo.play().catch(e => {});
+    vidJoshua.play().catch(e => {});
+    setupAudio();
     rafId = requestAnimationFrame(drawFrame);
 
   } else if (playing) {
@@ -297,18 +303,18 @@ async function handleTap() {
     if (rafId) cancelAnimationFrame(rafId);
     vidEvo.pause();
     vidJoshua.pause();
-    audMotor.pause();
-    audMusic.pause();
+    if (motorNode) motorNode.pause();
+    if (musicNode) musicNode.pause();
     overlay.classList.remove('hidden');
 
   } else {
     playing = true;
-    audMotor.currentTime = vidEvo.currentTime;
-    audMusic.currentTime = vidEvo.currentTime;
-    try { await vidEvo.play(); } catch(e) {}
-    try { await vidJoshua.play(); } catch(e) {}
-    try { await audMotor.play(); } catch(e) {}
-    try { await audMusic.play(); } catch(e) {}
+    if (motorNode) motorNode.currentTime = vidEvo.currentTime;
+    if (musicNode) musicNode.currentTime = vidEvo.currentTime;
+    vidEvo.play().catch(e => {});
+    vidJoshua.play().catch(e => {});
+    if (motorNode) motorNode.play().catch(e => {});
+    if (musicNode) musicNode.play().catch(e => {});
     overlay.classList.add('hidden');
     rafId = requestAnimationFrame(drawFrame);
   }
@@ -323,13 +329,12 @@ document.addEventListener('visibilitychange', () => {
     if (rafId) cancelAnimationFrame(rafId);
     vidEvo.pause();
     vidJoshua.pause();
-    audMotor.pause();
-    audMusic.pause();
+    if (motorNode) motorNode.pause();
+    if (musicNode) musicNode.pause();
     overlay.classList.remove('hidden');
   }
 });
 
-// custom touch for sliders
 function setupSliderTouch(slider, isVertical) {
   let startVal, startPos;
   slider.addEventListener('touchstart', (e) => {
@@ -356,7 +361,6 @@ function setupSliderTouch(slider, isVertical) {
     else setX(+slider.value, false);
   }, { passive: true });
 }
-
 setupSliderTouch(xEl, false);
 setupSliderTouch(yEl, true);
 
@@ -373,8 +377,8 @@ function setX(v, drag) {
 
 function setY(v, drag) {
   const t = v / 100;
-  audMotor.volume = 1 - t;
-  audMusic.volume = t;
+  if (motorGain) motorGain.gain.setTargetAtTime(1 - t, audioCtx.currentTime, 0.05);
+  if (musicGain) musicGain.gain.setTargetAtTime(t, audioCtx.currentTime, 0.05);
   lblMusic.className = 'lbl' + (t >= 0.5 ? ' on' : '');
   lblMotor.className = 'lbl' + (t < 0.5 ? ' on' : '');
   pctMusic.textContent = Math.round(t * 100) + '%';
