@@ -231,7 +231,7 @@ let rafId = null;
 let blendX = 0;
 
 // Web Audio for reliable mobile volume control
-let audioCtx, motorNode, musicNode, motorGain, musicGain;
+let audioCtx = null, motorNode, musicNode, motorGain, musicGain;
 let motorReady = false, musicReady = false;
 let targetMotor = 1, targetMusic = 0;
 
@@ -273,10 +273,37 @@ function drawFrame() {
 function setupAudio() {
   motorNode = document.getElementById('aud-motor');
   musicNode = document.getElementById('aud-music');
+
+  // play first — this satisfies the gesture requirement on all browsers
   motorNode.volume = 1;
   musicNode.volume = 0;
   motorNode.play().catch(e => console.warn('motor', e));
   musicNode.play().catch(e => console.warn('music', e));
+
+  // then wire through Web Audio for gain control (needed on mobile)
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    audioCtx.resume();
+
+    motorGain = audioCtx.createGain();
+    musicGain = audioCtx.createGain();
+    motorGain.gain.value = 1;
+    musicGain.gain.value = 0;
+    motorGain.connect(audioCtx.destination);
+    musicGain.connect(audioCtx.destination);
+
+    const motorSrc = audioCtx.createMediaElementSource(motorNode);
+    const musicSrc = audioCtx.createMediaElementSource(musicNode);
+    motorSrc.connect(motorGain);
+    musicSrc.connect(musicGain);
+
+    // once routed through Web Audio, element volume no longer matters
+    motorNode.volume = 1;
+    musicNode.volume = 1;
+  } catch(e) {
+    console.warn('Web Audio routing failed, volume control unavailable on mobile', e);
+    audioCtx = null;
+  }
 }
 
 function handleTap() {
@@ -369,8 +396,13 @@ function setX(v, drag) {
 
 function setY(v, drag) {
   const t = v / 100;
-  if (motorNode) motorNode.volume = Math.max(0, Math.min(1, 1 - t));
-  if (musicNode) musicNode.volume = Math.max(0, Math.min(1, t));
+  if (audioCtx && motorGain && musicGain) {
+    motorGain.gain.setTargetAtTime(1 - t, audioCtx.currentTime, 0.05);
+    musicGain.gain.setTargetAtTime(t, audioCtx.currentTime, 0.05);
+  } else {
+    if (motorNode) motorNode.volume = Math.max(0, Math.min(1, 1 - t));
+    if (musicNode) musicNode.volume = Math.max(0, Math.min(1, t));
+  }
   lblMusic.className = 'lbl' + (t >= 0.5 ? ' on' : '');
   lblMotor.className = 'lbl' + (t < 0.5 ? ' on' : '');
   pctMusic.textContent = Math.round(t * 100) + '%';
