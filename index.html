@@ -186,6 +186,8 @@ html, body {
   </div>
 </div>
 
+<div id="dbg" style="position:fixed;bottom:10px;left:10px;color:#fff;font-size:11px;z-index:999;background:rgba(0,0,0,0.7);padding:4px 8px;pointer-events:none;">waiting...</div>
+
 <video id="vid-evo" src="https://tiqrobothuman.b-cdn.net/evo.mp4"
   muted playsinline preload="auto" style="display:none"></video>
 <video id="vid-joshua" src="https://tiqrobothuman.b-cdn.net/joshua.mp4"
@@ -291,13 +293,15 @@ function setupAudio() {
     return src;
   }
 
+  const dbg = document.getElementById('dbg');
+
   load('https://tiqrobothuman.b-cdn.net/motor.m4a', motorGain)
-    .then(src => { motorNode = src; })
-    .catch(e => console.warn('motor load failed', e));
+    .then(src => { motorNode = src; dbg.textContent = 'motor ok'; })
+    .catch(e => { dbg.textContent = 'motor fail: ' + e.message; console.warn('motor load failed', e); });
 
   load('https://tiqrobothuman.b-cdn.net/music.m4a', musicGain)
-    .then(src => { musicNode = src; })
-    .catch(e => console.warn('music load failed', e));
+    .then(src => { musicNode = src; dbg.textContent += ' music ok ctx:' + audioCtx.state; })
+    .catch(e => { dbg.textContent += ' music fail: ' + e.message; console.warn('music load failed', e); });
 }
 
 function handleTap() {
