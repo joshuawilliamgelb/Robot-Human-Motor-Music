@@ -22,12 +22,16 @@ html, body {
   --vh: 75vh;
   --vw: calc(75vh * 9 / 16);
   --gap: 3vh;
+  --thumb: 12px;
+  --label-pad: 8px;
 }
 @media (max-width: 600px) {
   :root {
     --vh: calc(72vw * 16 / 9);
     --vw: 72vw;
     --gap: 4vw;
+    --thumb: 20px;
+    --label-pad: 14px;
   }
 }
 
@@ -46,10 +50,10 @@ html, body {
 #y-labels {
   display: flex; flex-direction: column;
   justify-content: space-between; align-items: flex-end;
-  padding: 8px 0;
+  padding: var(--label-pad) 0;
 }
 .y-end { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-#y-track { width: 12px; display: flex; align-items: center; justify-content: center; }
+#y-track { width: calc(var(--thumb) + 2px); display: flex; align-items: center; justify-content: center; }
 #y-slider {
   -webkit-appearance: none; appearance: none;
   writing-mode: vertical-lr; direction: rtl;
@@ -60,15 +64,12 @@ html, body {
 }
 #y-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 12px; height: 12px; border-radius: 50%;
+  width: var(--thumb); height: var(--thumb); border-radius: 50%;
   background: #fff; border: none;
 }
 #y-slider::-moz-range-thumb {
-  width: 12px; height: 12px; border-radius: 50%; background: #fff; border: none;
-}
-@media (max-width: 600px) {
-  #y-slider::-webkit-slider-thumb { width: 20px; height: 20px; }
-  #y-slider::-moz-range-thumb { width: 20px; height: 20px; }
+  width: var(--thumb); height: var(--thumb); border-radius: 50%;
+  background: #fff; border: none;
 }
 
 #video-cell {
@@ -112,17 +113,14 @@ html, body {
 }
 #x-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 12px; height: 12px; border-radius: 50%;
+  width: var(--thumb); height: var(--thumb); border-radius: 50%;
   background: #fff; border: none;
 }
 #x-slider::-moz-range-thumb {
-  width: 12px; height: 12px; border-radius: 50%; background: #fff; border: none;
+  width: var(--thumb); height: var(--thumb); border-radius: 50%;
+  background: #fff; border: none;
 }
-@media (max-width: 600px) {
-  #x-slider::-webkit-slider-thumb { width: 20px; height: 20px; }
-  #x-slider::-moz-range-thumb { width: 20px; height: 20px; }
-}
-#x-labels { display: flex; justify-content: space-between; padding: 0 4px; }
+#x-labels { display: flex; justify-content: space-between; padding: 0 calc(var(--label-pad) - 4px); }
 .x-end { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .x-end.right { align-items: flex-end; }
 .lbl {
@@ -221,20 +219,32 @@ let looping = false;
 let rafId = null;
 let blendX = 0;
 
+// set initial volumes before any play
 audMotor.volume = 1;
 audMusic.volume = 0;
 
+// hi-dpi canvas
 function resizeCanvas() {
-  canvas.width = videoCell.offsetWidth;
-  canvas.height = videoCell.offsetHeight;
+  const dpr = window.devicePixelRatio || 1;
+  const w = videoCell.offsetWidth;
+  const h = videoCell.offsetHeight;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  ctx2d.scale(dpr, dpr);
+  // store css size for drawImage
+  canvas._cssW = w;
+  canvas._cssH = h;
 }
 resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
+window.addEventListener('resize', () => {
+  ctx2d.setTransform(1, 0, 0, 1, 0, 0);
+  resizeCanvas();
+});
 
 function drawFrame() {
   if (!playing) return;
-  const w = canvas.width;
-  const h = canvas.height;
+  const w = canvas._cssW;
+  const h = canvas._cssH;
   ctx2d.globalAlpha = 1;
   ctx2d.drawImage(vidEvo, 0, 0, w, h);
   if (blendX > 0) {
@@ -253,19 +263,35 @@ function drawFrame() {
   rafId = requestAnimationFrame(drawFrame);
 }
 
-function handleTap() {
+async function handleTap() {
   if (!started) {
     started = true;
     playing = true;
     overlay.classList.add('hidden');
     poster.classList.add('hidden');
+
+    // unlock audio on iOS/Chrome mobile — create silent context in gesture
+    try {
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      const buf = ac.createBuffer(1, 1, 22050);
+      const src = ac.createBufferSource();
+      src.buffer = buf;
+      src.connect(ac.destination);
+      src.start(0);
+      await ac.resume();
+    } catch(e) {}
+
+    // set volumes explicitly then play
     audMotor.volume = 1;
     audMusic.volume = 0;
-    vidEvo.play();
-    vidJoshua.play();
-    audMotor.play();
-    audMusic.play();
+
+    try { await vidEvo.play(); } catch(e) {}
+    try { await vidJoshua.play(); } catch(e) {}
+    try { await audMotor.play(); } catch(e) { console.warn('motor fail', e); }
+    try { await audMusic.play(); } catch(e) { console.warn('music fail', e); }
+
     rafId = requestAnimationFrame(drawFrame);
+
   } else if (playing) {
     playing = false;
     if (rafId) cancelAnimationFrame(rafId);
@@ -274,20 +300,20 @@ function handleTap() {
     audMotor.pause();
     audMusic.pause();
     overlay.classList.remove('hidden');
+
   } else {
     playing = true;
     audMotor.currentTime = vidEvo.currentTime;
     audMusic.currentTime = vidEvo.currentTime;
-    vidEvo.play();
-    vidJoshua.play();
-    audMotor.play();
-    audMusic.play();
+    try { await vidEvo.play(); } catch(e) {}
+    try { await vidJoshua.play(); } catch(e) {}
+    try { await audMotor.play(); } catch(e) {}
+    try { await audMusic.play(); } catch(e) {}
     overlay.classList.add('hidden');
     rafId = requestAnimationFrame(drawFrame);
   }
 }
 
-// video cell tap — but not from slider touches
 videoCell.addEventListener('click', handleTap);
 
 document.addEventListener('visibilitychange', () => {
@@ -303,23 +329,20 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// custom touch handling for sliders so they don't trigger video tap
+// custom touch for sliders
 function setupSliderTouch(slider, isVertical) {
   let startVal, startPos;
-
   slider.addEventListener('touchstart', (e) => {
     e.stopPropagation();
     startVal = +slider.value;
     startPos = isVertical ? e.touches[0].clientY : e.touches[0].clientX;
   }, { passive: true });
-
   slider.addEventListener('touchmove', (e) => {
     e.stopPropagation();
     const pos = isVertical ? e.touches[0].clientY : e.touches[0].clientX;
     const rect = slider.getBoundingClientRect();
     const size = isVertical ? rect.height : rect.width;
     const delta = (pos - startPos) / size * 100;
-    // vertical slider is inverted (top=max)
     const newVal = isVertical
       ? Math.max(0, Math.min(100, startVal - delta))
       : Math.max(0, Math.min(100, startVal + delta));
@@ -327,7 +350,6 @@ function setupSliderTouch(slider, isVertical) {
     if (isVertical) setY(newVal, true);
     else setX(newVal, true);
   }, { passive: true });
-
   slider.addEventListener('touchend', (e) => {
     e.stopPropagation();
     if (isVertical) setY(+slider.value, false);
