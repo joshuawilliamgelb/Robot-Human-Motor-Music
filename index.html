@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robot / Human</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  background: #000;
+  width: 100%; height: 100%;
+  overflow: hidden;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+#stage {
+  width: 100vw; height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  background: #000;
+}
+#wrap {
+  display: inline-grid;
+  grid-template-columns: auto 3vh 42.1875vh;
+  grid-template-rows: 75vh 3vh auto;
+}
+#y-track-cell {
+  grid-column: 1; grid-row: 1;
+  display: flex; flex-direction: row;
+  align-items: stretch; justify-content: flex-end;
+  gap: 6px;
+}
+#y-labels {
+  display: flex; flex-direction: column;
+  justify-content: space-between; align-items: flex-end;
+}
+.y-end { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+#y-track { width: 12px; display: flex; align-items: center; justify-content: center; }
+#y-slider {
+  -webkit-appearance: none; appearance: none;
+  writing-mode: vertical-lr; direction: rtl;
+  width: 1px; height: 75vh;
+  background: #2a2a2a; outline: none;
+  cursor: ns-resize; padding: 0; margin: 0; flex-shrink: 0;
+}
+#y-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: #fff; border: none; cursor: ns-resize;
+}
+#y-slider::-moz-range-thumb {
+  width: 12px; height: 12px; border-radius: 50%; background: #fff; border: none;
+}
+#video-cell {
+  grid-column: 3; grid-row: 1;
+  position: relative; background: #000; overflow: hidden; cursor: pointer;
+}
+#vid-evo, #vid-joshua {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; object-fit: cover;
+}
+#vid-evo  { z-index: 1; }
+#vid-joshua { z-index: 2; opacity: 0; }
+
+#play-overlay {
+  position: absolute; inset: 0; z-index: 10;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 66.666%;
+  cursor: pointer; background: rgba(0,0,0,0.45);
+  transition: opacity 0.4s; opacity: 1; pointer-events: auto;
+}
+#play-overlay.hidden { opacity: 0; pointer-events: none; }
+#tap-label {
+  font-size: 9px; letter-spacing: 0.18em;
+  text-transform: uppercase; color: rgba(255,255,255,0.5);
+}
+#x-track-cell {
+  grid-column: 3; grid-row: 3;
+  display: flex; flex-direction: column;
+  align-items: stretch; padding-top: 8px;
+}
+#x-slider {
+  width: 100%; -webkit-appearance: none; appearance: none;
+  height: 1px; background: #2a2a2a; outline: none;
+  cursor: ew-resize; display: block; margin: 0 0 5px 0; padding: 0;
+}
+#x-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: #fff; border: none; cursor: ew-resize;
+}
+#x-slider::-moz-range-thumb {
+  width: 12px; height: 12px; border-radius: 50%; background: #fff; border: none;
+}
+#x-labels { display: flex; justify-content: space-between; }
+.x-end { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.x-end.right { align-items: flex-end; }
+.lbl {
+  font-size: 9px; letter-spacing: 0.13em; text-transform: uppercase;
+  color: #333; transition: color 0.12s; white-space: nowrap; line-height: 1.4;
+}
+.lbl.on { color: #999; }
+.pct {
+  font-size: 9px; color: #555; opacity: 0;
+  white-space: nowrap; line-height: 1.4;
+  font-variant-numeric: tabular-nums; transition: opacity 0.1s;
+}
+.pct.on { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="wrap">
+    <div id="y-track-cell">
+      <div id="y-labels">
+        <div class="y-end">
+          <span class="lbl" id="lbl-music">music</span>
+          <span class="pct" id="pct-music"></span>
+        </div>
+        <div class="y-end">
+          <span class="pct" id="pct-motor"></span>
+          <span class="lbl" id="lbl-motor">motor</span>
+        </div>
+      </div>
+      <div id="y-track">
+        <input type="range" id="y-slider" min="0" max="100" value="0" step="1" />
+      </div>
+    </div>
+
+    <div id="video-cell">
+      <video id="vid-evo" src="https://tiqrobothuman.b-cdn.net/evo.mp4"
+        muted playsinline preload="auto"></video>
+      <video id="vid-joshua" src="https://tiqrobothuman.b-cdn.net/joshua.mp4"
+        muted playsinline preload="auto"></video>
+      <div id="play-overlay">
+        <span id="tap-label">tap to play</span>
+      </div>
+    </div>
+
+    <div id="x-track-cell">
+      <input type="range" id="x-slider" min="0" max="100" value="0" step="1" />
+      <div id="x-labels">
+        <div class="x-end left">
+          <span class="lbl" id="lbl-robot">robot</span>
+          <span class="pct" id="pct-robot"></span>
+        </div>
+        <div class="x-end right">
+          <span class="lbl" id="lbl-human">human</span>
+          <span class="pct" id="pct-human"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- audio elements: stream immediately, no fetch delay -->
+<audio id="aud-motor" src="https://tiqrobothuman.b-cdn.net/motor.m4a" loop preload="auto"></audio>
+<audio id="aud-music" src="https://tiqrobothuman.b-cdn.net/music.m4a" loop preload="auto"></audio>
+
+<script>
+const xEl = document.getElementById('x-slider');
+const yEl = document.getElementById('y-slider');
+const vidEvo = document.getElementById('vid-evo');
+const vidJoshua = document.getElementById('vid-joshua');
+const videoCell = document.getElementById('video-cell');
+const overlay = document.getElementById('play-overlay');
+const audMotor = document.getElementById('aud-motor');
+const audMusic = document.getElementById('aud-music');
+
+const lblRobot = document.getElementById('lbl-robot');
+const lblHuman = document.getElementById('lbl-human');
+const lblMusic = document.getElementById('lbl-music');
+const lblMotor = document.getElementById('lbl-motor');
+const pctRobot = document.getElementById('pct-robot');
+const pctHuman = document.getElementById('pct-human');
+const pctMusic = document.getElementById('pct-music');
+const pctMotor = document.getElementById('pct-motor');
+
+const DURATION = 115;
+const LOOP_THRESHOLD = 0.3;
+
+let started = false;
+let playing = false;
+let resyncing = false;
+
+audMotor.volume = 1;
+audMusic.volume = 0;
+
+function syncLoop() {
+  if (!playing || resyncing) return;
+
+  const t = vidEvo.currentTime;
+
+  // resync loop point
+  if (t >= DURATION - LOOP_THRESHOLD) {
+    resyncing = true;
+    vidEvo.currentTime = 0;
+    vidJoshua.currentTime = 0;
+    audMotor.currentTime = 0;
+    audMusic.currentTime = 0;
+    setTimeout(() => { resyncing = false; }, 500);
+    requestAnimationFrame(syncLoop);
+    return;
+  }
+
+  // keep joshua tracking evo
+  const drift = Math.abs(vidJoshua.currentTime - t);
+  if (drift > 0.15) vidJoshua.currentTime = t;
+
+  // keep audio tracking evo
+  const audioDrift = Math.abs(audMotor.currentTime - t);
+  if (audioDrift > 0.15) {
+    audMotor.currentTime = t;
+    audMusic.currentTime = t;
+  }
+
+  requestAnimationFrame(syncLoop);
+}
+
+async function handleTap() {
+  if (!started) {
+    started = true;
+    playing = true;
+
+    overlay.classList.add('hidden');
+    videoCell.classList.remove('paused');
+
+    vidEvo.play();
+    vidJoshua.play();
+    audMotor.play();
+    audMusic.play();
+
+    requestAnimationFrame(syncLoop);
+
+  } else if (playing) {
+    playing = false;
+    vidEvo.pause();
+    vidJoshua.pause();
+    audMotor.pause();
+    audMusic.pause();
+    videoCell.classList.add('paused');
+    overlay.classList.remove('hidden');
+
+  } else {
+    playing = true;
+    // resync audio to video before resuming
+    audMotor.currentTime = vidEvo.currentTime;
+    audMusic.currentTime = vidEvo.currentTime;
+    vidEvo.play();
+    vidJoshua.play();
+    audMotor.play();
+    audMusic.play();
+    videoCell.classList.remove('paused');
+    overlay.classList.add('hidden');
+    requestAnimationFrame(syncLoop);
+  }
+}
+
+videoCell.addEventListener('click', handleTap);
+
+function setX(v, drag) {
+  const t = v / 100;
+  vidJoshua.style.opacity = t;
+  lblRobot.className = 'lbl' + (t < 0.5 ? ' on' : '');
+  lblHuman.className = 'lbl' + (t >= 0.5 ? ' on' : '');
+  pctRobot.textContent = Math.round((1 - t) * 100) + '%';
+  pctHuman.textContent = Math.round(t * 100) + '%';
+  pctRobot.className = 'pct' + (drag ? ' on' : '');
+  pctHuman.className = 'pct' + (drag ? ' on' : '');
+}
+
+function setY(v, drag) {
+  const t = v / 100;
+  audMotor.volume = 1 - t;
+  audMusic.volume = t;
+  lblMusic.className = 'lbl' + (t >= 0.5 ? ' on' : '');
+  lblMotor.className = 'lbl' + (t < 0.5 ? ' on' : '');
+  pctMusic.textContent = Math.round(t * 100) + '%';
+  pctMotor.textContent = Math.round((1 - t) * 100) + '%';
+  pctMusic.className = 'pct' + (drag ? ' on' : '');
+  pctMotor.className = 'pct' + (drag ? ' on' : '');
+}
+
+xEl.addEventListener('input', () => setX(+xEl.value, true));
+xEl.addEventListener('mouseup', () => setX(+xEl.value, false));
+xEl.addEventListener('touchend', () => setX(+xEl.value, false));
+yEl.addEventListener('input', () => setY(+yEl.value, true));
+yEl.addEventListener('mouseup', () => setY(+yEl.value, false));
+yEl.addEventListener('touchend', () => setY(+yEl.value, false));
+
+setX(0, false);
+setY(0, false);
+
+document.addEventListener('visibilitychange', () => {
+  if (!started) return;
+  if (document.hidden) {
+    if (playing) {
+      playing = false;
+      vidEvo.pause();
+      vidJoshua.pause();
+      audMotor.pause();
+      audMusic.pause();
+      videoCell.classList.add('paused');
+      overlay.classList.remove('hidden');
+    }
+  }
+});
+</script>
+</body>
+</html>
