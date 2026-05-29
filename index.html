@@ -186,9 +186,6 @@ html, body {
   </div>
 </div>
 
-<audio id="aud-motor" src="https://tiqrobothuman.b-cdn.net/motor.m4a" loop preload="auto"></audio>
-<audio id="aud-music" src="https://tiqrobothuman.b-cdn.net/music.m4a" loop preload="auto"></audio>
-
 <video id="vid-evo" src="https://tiqrobothuman.b-cdn.net/evo.mp4"
   muted playsinline preload="auto" style="display:none"></video>
 <video id="vid-joshua" src="https://tiqrobothuman.b-cdn.net/joshua.mp4"
@@ -271,39 +268,36 @@ function drawFrame() {
 }
 
 function setupAudio() {
-  motorNode = document.getElementById('aud-motor');
-  musicNode = document.getElementById('aud-music');
+  // create context synchronously in gesture — critical for mobile
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-  // play first — this satisfies the gesture requirement on all browsers
-  motorNode.volume = 1;
-  musicNode.volume = 0;
-  motorNode.play().catch(e => console.warn('motor', e));
-  musicNode.play().catch(e => console.warn('music', e));
+  motorGain = audioCtx.createGain();
+  musicGain = audioCtx.createGain();
+  motorGain.gain.value = 1;
+  musicGain.gain.value = 0;
+  motorGain.connect(audioCtx.destination);
+  musicGain.connect(audioCtx.destination);
 
-  // then wire through Web Audio for gain control (needed on mobile)
-  try {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    audioCtx.resume();
-
-    motorGain = audioCtx.createGain();
-    musicGain = audioCtx.createGain();
-    motorGain.gain.value = 1;
-    musicGain.gain.value = 0;
-    motorGain.connect(audioCtx.destination);
-    musicGain.connect(audioCtx.destination);
-
-    const motorSrc = audioCtx.createMediaElementSource(motorNode);
-    const musicSrc = audioCtx.createMediaElementSource(musicNode);
-    motorSrc.connect(motorGain);
-    musicSrc.connect(musicGain);
-
-    // once routed through Web Audio, element volume no longer matters
-    motorNode.volume = 1;
-    musicNode.volume = 1;
-  } catch(e) {
-    console.warn('Web Audio routing failed, volume control unavailable on mobile', e);
-    audioCtx = null;
+  // load via fetch into BufferSource — reliable on all platforms
+  async function load(url, gainNode) {
+    const res = await fetch(url, { credentials: 'omit' });
+    const buf = await res.arrayBuffer();
+    const decoded = await audioCtx.decodeAudioData(buf);
+    const src = audioCtx.createBufferSource();
+    src.buffer = decoded;
+    src.loop = true;
+    src.connect(gainNode);
+    src.start(0);
+    return src;
   }
+
+  load('https://tiqrobothuman.b-cdn.net/motor.m4a', motorGain)
+    .then(src => { motorNode = src; })
+    .catch(e => console.warn('motor load failed', e));
+
+  load('https://tiqrobothuman.b-cdn.net/music.m4a', musicGain)
+    .then(src => { musicNode = src; })
+    .catch(e => console.warn('music load failed', e));
 }
 
 function handleTap() {
@@ -322,18 +316,14 @@ function handleTap() {
     if (rafId) cancelAnimationFrame(rafId);
     vidEvo.pause();
     vidJoshua.pause();
-    if (motorNode) motorNode.pause();
-    if (musicNode) musicNode.pause();
+    if (audioCtx) audioCtx.suspend();
     overlay.classList.remove('hidden');
 
   } else {
     playing = true;
-    if (motorNode) motorNode.currentTime = vidEvo.currentTime;
-    if (musicNode) musicNode.currentTime = vidEvo.currentTime;
     vidEvo.play().catch(e => {});
     vidJoshua.play().catch(e => {});
-    if (motorNode) motorNode.play().catch(e => {});
-    if (musicNode) musicNode.play().catch(e => {});
+    if (audioCtx) audioCtx.resume();
     overlay.classList.add('hidden');
     rafId = requestAnimationFrame(drawFrame);
   }
@@ -348,8 +338,7 @@ document.addEventListener('visibilitychange', () => {
     if (rafId) cancelAnimationFrame(rafId);
     vidEvo.pause();
     vidJoshua.pause();
-    if (motorNode) motorNode.pause();
-    if (musicNode) musicNode.pause();
+    if (audioCtx) audioCtx.suspend();
     overlay.classList.remove('hidden');
   }
 });
