@@ -274,8 +274,10 @@ function setupAudio() {
   motorNode = document.getElementById('aud-motor');
   musicNode = document.getElementById('aud-music');
 
-  // create AudioContext synchronously in gesture
+  // create and resume AudioContext synchronously in gesture
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  audioCtx.resume();
+
   motorGain = audioCtx.createGain();
   musicGain = audioCtx.createGain();
   motorGain.gain.value = 1;
@@ -288,8 +290,10 @@ function setupAudio() {
     const musicSrc = audioCtx.createMediaElementSource(musicNode);
     motorSrc.connect(motorGain);
     musicSrc.connect(musicGain);
+    motorNode.volume = 1;
+    musicNode.volume = 1; // volume handled by gainNode, set element to full
   } catch(e) {
-    // fallback: direct volume control
+    console.warn('MediaElementSource failed, using volume fallback', e);
     motorNode.volume = 1;
     musicNode.volume = 0;
     audioCtx = null;
